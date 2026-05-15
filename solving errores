@@ -1,0 +1,105 @@
+#the second version"
+```
+These were done to solve errors.
+pip uninstall gradio -y
+pip install gradio==3.41.2
+pip install jinja2==3.0.3
+pip install jinja2==3.0.3pip install jinja2==3.0.3
+pip install \
+gradio==3.41.2 \
+jinja2==3.0.3 \
+fastapi==0.95.2 \
+starlette==0.27.0
+```
+from langchain_ibm import WatsonxLLM, WatsonxEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import Chroma
+from langchain_community.document_loaders import PyPDFLoader
+from langchain.chains import RetrievalQA
+import gradio as gr
+
+# ✅ LLM
+def get_llm():
+    return WatsonxLLM(
+        model_id='ibm/granite-3-2-8b-instruct',
+        url="https://us-south.ml.cloud.ibm.com",
+        project_id="skills-network",
+        params={
+            "temperature": 0.5,
+            "max_new_tokens": 256
+        }
+    )
+
+# ✅ PDF Loader
+
+def document_loader(file):
+    loader = PyPDFLoader(file)
+    return loader.load()
+
+
+# ✅ Text Splitter
+def text_splitter(data):
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=100,
+        length_function=len
+    )
+    return splitter.split_documents(data)
+
+# ✅ Embedding
+def watsonx_embedding():
+    return WatsonxEmbeddings(
+        model_id="ibm/slate-125m-english-rtrvr",
+        url="https://us-south.ml.cloud.ibm.com",
+        project_id="skills-network",
+        params={
+            "truncate_input_tokens": 512,
+            "return_options": {"input_text": False}
+        }
+    )
+
+# ✅ Vector DB
+def vector_database(chunks):
+    return Chroma.from_documents(chunks, watsonx_embedding())
+
+# ✅ Retriever
+def build_retriever(file):
+    docs = document_loader(file)
+    chunks = text_splitter(docs)
+    vectordb = vector_database(chunks)
+    return vectordb.as_retriever()
+
+# ✅ QA
+def retriever_qa(file, query):
+    llm = get_llm()
+    retriever_obj = build_retriever(file)
+
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=retriever_obj,
+        return_source_documents=False
+    )
+
+    return qa_chain.invoke(query)["result"]
+
+# ✅ UI
+
+rag_application = gr.Interface(
+    fn=retriever_qa,
+    inputs=[
+        gr.File(label="Upload PDF File", type="file"),
+        gr.Textbox(label="Input Query", lines=2)
+    ],
+    outputs=gr.Textbox(label="Answer"),
+    title="PDF QA Chatbot",
+    description="Upload PDF and ask questions"
+)
+
+
+# ✅ Launch
+rag_application.launch(
+    server_name="0.0.0.0",
+    server_port=7860,
+    share=True
+)
